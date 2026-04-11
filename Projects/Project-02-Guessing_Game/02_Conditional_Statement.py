@@ -25,3 +25,14 @@ if user > 10:
 
 else:
     print ("number is small: ")
+
+
+#excercise 4
+temp = int(input("what is the temperature: "))
+
+if temp >= 30:
+    print ("it is hot")
+elif temp >= 20:
+    print ("it is warm")
+else:
+    print ("it is cold")
