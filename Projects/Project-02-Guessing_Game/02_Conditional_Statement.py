@@ -17,3 +17,11 @@ elif marks >=70:
     print("Grade: C")
 else:
     print("Grade: D")
+
+#excercise 3
+user = int(input("enter a number: "))
+if user > 10:
+    print ("number is big: ")
+
+else:
+    print ("number is small: ")
