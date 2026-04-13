@@ -36,11 +36,5 @@ elif temp >= 20:
     print ("it is warm")
 else:
     print ("it is cold")
-#comparison operators
-#== equal too
-#!= not equal to
-#> greater than
-#< less than
-#>= greator than or equal too
-#<=less than or equal too
+
 
