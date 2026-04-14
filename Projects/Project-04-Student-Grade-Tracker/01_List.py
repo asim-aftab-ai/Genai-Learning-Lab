@@ -27,3 +27,4 @@ print(count[5])  # Output: 60
 
 Fruits = ["Apple", "Banana", "Cherry", "Date", "Elderberry"]
 print(Fruits, [0])
+
