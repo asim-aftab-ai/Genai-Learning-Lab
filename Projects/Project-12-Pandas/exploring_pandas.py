@@ -1,21 +1,63 @@
 import pandas as pd
 
-from google.colab import files
-uploaded = files.upload()
 
+# ==================================================
+# PROJECT 12 — EXPLORING DATA WITH PANDAS
+# ==================================================
+
+# 1. Load the CSV dataset
 df = pd.read_csv("train.csv")
 
-print("SHAPE:")
+
+# ==================================================
+# 2. DATASET SHAPE
+# ==================================================
+
+print("\n========== DATASET SHAPE ==========")
+
 print(df.shape)
 
-print("\nCOLUMNS:")
+
+# ==================================================
+# 3. COLUMN NAMES
+# ==================================================
+
+print("\n========== COLUMN NAMES ==========")
+
 print(df.columns)
 
-print("\nDATA TYPES:")
+
+# ==================================================
+# 4. DATA TYPES
+# ==================================================
+
+print("\n========== DATA TYPES ==========")
+
 print(df.dtypes)
 
-print("\nFIRST 10 ROWS:")
+
+# ==================================================
+# 5. FIRST 10 ROWS
+# ==================================================
+
+print("\n========== FIRST 10 ROWS ==========")
+
 print(df.head(10))
 
-print("\nSTATISTICAL SUMMARY:")
+
+# ==================================================
+# 6. STATISTICAL SUMMARY
+# ==================================================
+
+print("\n========== STATISTICAL SUMMARY ==========")
+
 print(df.describe())
+
+
+# ==================================================
+# PROJECT COMPLETE
+# ==================================================
+
+print("\n========== PROJECT COMPLETE ==========")
+
+print("Dataset successfully loaded and explored!")
