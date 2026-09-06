@@ -1,244 +1,585 @@
-import streamlit as st
+import io
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.express as px
+import streamlit as st
 
-# ============================================================
-# PROJECT 15 - CSV DATA ANALYZER & VISUALIZER (STREAMLIT APP)
-# ============================================================
-# Learning Concepts:
-# 1. Streamlit web application basics:
-#    - st.set_page_config()
-#    - st.title(), st.write(), st.info(), st.warning(), st.error()
-# 2. File uploading with st.file_uploader()
-# 3. Interactive DataFrames with st.dataframe()
-# 4. Metric summary cards with st.metric()
-# 5. Sidebar controls with st.sidebar
-# 6. Interactive user actions with st.button()
-# 7. Embedding Matplotlib figures using st.pyplot()
-# ============================================================
+# ==============================================================================
+# PROJECT 15: CSV DATA ANALYSIS TOOLKIT (STREAMLIT APP)
+# ==============================================================================
+# Core Workflow:
+# UPLOAD -> INSPECT -> FILTER -> ANALYZE -> VISUALIZE -> DOWNLOAD
+#
+# Key Concepts Used:
+# - st.set_page_config()
+# - st.title(), st.write(), st.subheader(), st.caption(), st.info(), st.warning(), st.error()
+# - st.sidebar
+# - st.file_uploader()
+# - st.columns()
+# - st.dataframe()
+# - st.selectbox(), st.slider()
+# - st.expander()
+# - st.plotly_chart() (using Plotly Express)
+# - st.download_button()
+# ==============================================================================
 
-# Configure page settings
+# Configure Streamlit page settings
 st.set_page_config(
-    page_title="CSV Data Analyzer",
+    page_title="CSV Data Analysis Toolkit",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# 1. Header & Introduction
-st.title("📊 CSV Data Analyzer & Visualizer")
-st.write(
+
+def load_csv_safely(uploaded_file) -> pd.DataFrame | None:
+    """Safely reads an uploaded CSV file into a pandas DataFrame.
+    Handles encoding issues, empty files, and corrupted data gracefully.
     """
-    Welcome! This interactive web app allows you to upload any CSV dataset, inspect its 
-    structure, explore summary statistics, and generate clear visual charts.
-    """
-)
-
-# 2. File Uploader
-# st.file_uploader allows users to upload local files directly through the browser
-uploaded_file = st.file_uploader("Choose a CSV file to analyze", type=["csv"])
-
-
-def load_uploaded_csv(file):
-    """Safely loads an uploaded CSV file into a pandas DataFrame."""
     try:
-        df = pd.read_csv(file)
+        df = pd.read_csv(uploaded_file)
         if df.empty:
-            st.error("Uploaded CSV file contains no data (empty table).")
+            st.error("⚠️ The uploaded CSV file contains no data rows.")
             return None
         return df
     except pd.errors.EmptyDataError:
-        st.error("Uploaded file is completely empty.")
+        st.error("⚠️ The uploaded file is completely empty.")
         return None
+    except UnicodeDecodeError:
+        # Fallback to latin-1 encoding if UTF-8 fails
+        try:
+            uploaded_file.seek(0)
+            df = pd.read_csv(uploaded_file, encoding="latin-1")
+            if df.empty:
+                st.error("⚠️ The uploaded CSV file contains no data rows.")
+                return None
+            return df
+        except Exception as e:
+            st.error(f"⚠️ Could not decode CSV with UTF-8 or Latin-1: {e}")
+            return None
     except Exception as e:
-        st.error(f"Failed to read CSV file: {e}")
+        st.error(f"⚠️ Failed to read CSV file: {e}")
         return None
 
 
+# ------------------------------------------------------------------------------
+# SIDEBAR CONTROLS
+# ------------------------------------------------------------------------------
+st.sidebar.title("🛠️ Analysis Controls")
+
+# File Uploader
+st.sidebar.markdown("### 1. Data Source")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload a CSV file",
+    type=["csv"],
+    help="Select a local CSV file to begin analysis.",
+)
+
+# If no file is uploaded, render the welcoming landing screen
 if uploaded_file is None:
-    st.info("👋 Please upload a CSV file above to begin analysis.")
-else:
-    # 3. Read & Validate Uploaded Data
-    df = load_uploaded_csv(uploaded_file)
+    st.title("📊 CSV Data Analysis Toolkit")
+    st.write(
+        """
+        Welcome to the **CSV Data Analysis Toolkit**! This local interactive application 
+        allows you to explore, filter, analyze, visualize, and export any CSV dataset.
+        """
+    )
 
-    if df is not None:
-        st.success(f"Successfully loaded **{uploaded_file.name}**!")
+    st.info("👈 **Get started by uploading a CSV file in the sidebar.**")
 
-        # ----------------------------------------------------
-        # Basic Dataset Information & Summary Cards
-        # ----------------------------------------------------
-        st.subheader("📋 Dataset Overview")
-        rows, cols = df.shape
-        missing_count = int(df.isna().sum().sum())
+    st.markdown("---")
+    st.subheader("🚀 How It Works")
+    col1, col2, col3 = st.columns(3)
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Rows", f"{rows:,}")
-        col2.metric("Total Columns", f"{cols:,}")
-        col3.metric("Total Missing Values", f"{missing_count:,}")
-
-        # Data preview
-        st.write("### Data Preview")
-        st.dataframe(df.head(50), use_container_width=True)
-
-        # ----------------------------------------------------
-        # Column Details & Statistics
-        # ----------------------------------------------------
-        st.subheader("🔍 Column Details & Statistics")
-
-        col_left, col_right = st.columns(2)
-
-        with col_left:
-            st.write("**Column Data Types & Missing Counts:**")
-            dtype_df = pd.DataFrame({
-                "Column Name": df.columns,
-                "Data Type": [str(t) for t in df.dtypes],
-                "Missing Values": df.isna().sum().values,
-                "Missing (%)": [(val / rows) * 100 for val in df.isna().sum().values]
-            })
-            st.dataframe(dtype_df, use_container_width=True)
-
-        with col_right:
-            st.write("**Numerical Summary Statistics:**")
-            numeric_df = df.select_dtypes(include=["number"])
-            if not numeric_df.empty:
-                st.dataframe(numeric_df.describe().T, use_container_width=True)
-            else:
-                st.info("No numeric columns found for statistical summary.")
-
-        # Categorical columns check
-        cat_cols = df.select_dtypes(exclude=["number"]).columns.tolist()
-        num_cols = numeric_df.columns.tolist()
-
-        # ----------------------------------------------------
-        # Interactive Visualizations Section
-        # ----------------------------------------------------
-        st.subheader("📈 Data Visualizations")
-
-        # Sidebar controls for chart configuration
-        st.sidebar.header("🎨 Visualization Controls")
-        chart_type = st.sidebar.selectbox(
-            "Select Chart Type",
-            ["Line Chart", "Bar Chart", "Pie Chart"]
+    with col1:
+        st.markdown("#### 1. Upload & Inspect")
+        st.write(
+            "Upload any CSV dataset to instantly view row/column counts, missing value summaries, "
+            "data types, and raw records."
         )
 
-        # 1. Line Chart
-        if chart_type == "Line Chart":
-            st.write("#### Line Chart (Trend Analysis)")
-            if not num_cols:
-                st.warning("No numeric columns available in this dataset to generate a line chart.")
+    with col2:
+        st.markdown("#### 2. Filter & Analyze")
+        st.write(
+            "Interactively isolate categories or numeric ranges. View descriptive statistics "
+            "that update automatically based on your filtered view."
+        )
+
+    with col3:
+        st.markdown("#### 3. Visualize & Export")
+        st.write(
+            "Generate interactive Plotly charts (Bar, Line, Scatter, Histogram, Pie) on the "
+            "filtered data and download your clean subset as a new CSV."
+        )
+
+    st.stop()
+
+
+# ------------------------------------------------------------------------------
+# DATA INGESTION (ORIGINAL DATA)
+# ------------------------------------------------------------------------------
+df_raw = load_csv_safely(uploaded_file)
+
+if df_raw is None:
+    st.stop()
+
+# Cache column types from original data
+all_cols = df_raw.columns.tolist()
+numeric_cols = df_raw.select_dtypes(include=["number"]).columns.tolist()
+categorical_cols = df_raw.select_dtypes(exclude=["number"]).columns.tolist()
+
+# ------------------------------------------------------------------------------
+# SIDEBAR: DATA FILTERING
+# ------------------------------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 2. Interactive Filters")
+st.sidebar.caption("Filters create a non-destructive view of your data.")
+
+# Start with a full view of the original data
+df_filtered = df_raw.copy()
+
+# Categorical Filter
+# Select candidate categorical columns (or columns with manageable unique counts <= 200)
+cat_filter_candidates = [c for c in all_cols if df_raw[c].nunique() <= 200]
+selected_cat_col = st.sidebar.selectbox(
+    "Filter by Category Column",
+    options=["(None)"] + cat_filter_candidates,
+    help="Select a column to filter by specific categorical values.",
+)
+
+if selected_cat_col != "(None)":
+    unique_vals = sorted(
+        [str(val) for val in df_raw[selected_cat_col].dropna().unique()]
+    )
+    selected_val = st.sidebar.selectbox(
+        f"Value for '{selected_cat_col}'",
+        options=["All"] + unique_vals,
+    )
+    if selected_val != "All":
+        df_filtered = df_filtered[
+            df_filtered[selected_cat_col].astype(str) == selected_val
+        ]
+
+# Numeric Range Filter
+selected_num_col = st.sidebar.selectbox(
+    "Filter by Numeric Column Range",
+    options=["(None)"] + numeric_cols,
+    help="Select a numeric column to filter by minimum and maximum values.",
+)
+
+if selected_num_col != "(None)":
+    col_series = df_raw[selected_num_col].dropna()
+    if col_series.empty:
+        st.sidebar.warning(f"Column '{selected_num_col}' contains only missing values.")
+    else:
+        min_v = float(col_series.min())
+        max_v = float(col_series.max())
+
+        if min_v == max_v:
+            st.sidebar.info(
+                f"Column '{selected_num_col}' has a single constant value: {min_v}"
+            )
+        else:
+            slider_range = st.sidebar.slider(
+                f"Range for '{selected_num_col}'",
+                min_value=min_v,
+                max_value=max_v,
+                value=(min_v, max_v),
+            )
+            df_filtered = df_filtered[
+                (df_filtered[selected_num_col] >= slider_range[0])
+                & (df_filtered[selected_num_col] <= slider_range[1])
+            ]
+
+# Filter Summary in Sidebar
+total_raw_rows = len(df_raw)
+filtered_rows = len(df_filtered)
+pct_remaining = (
+    (filtered_rows / total_raw_rows * 100) if total_raw_rows > 0 else 0.0
+)
+st.sidebar.metric(
+    label="Active Filtered Rows",
+    value=f"{filtered_rows:,} / {total_raw_rows:,}",
+    delta=f"{pct_remaining:.1f}% kept",
+)
+
+# ------------------------------------------------------------------------------
+# SIDEBAR: VISUALIZATION CONTROLS
+# ------------------------------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 3. Visualization Setup")
+chart_type = st.sidebar.selectbox(
+    "Select Chart Type",
+    ["Bar Chart", "Line Chart", "Scatter Plot", "Histogram", "Pie Chart"],
+)
+
+# Dynamic Chart Parameters
+bar_cat_col = None
+bar_mode = None
+bar_val_col = None
+
+line_x_col = None
+line_y_col = None
+
+scatter_x_col = None
+scatter_y_col = None
+scatter_color_col = None
+
+hist_col = None
+hist_bins = 30
+
+pie_cat_col = None
+
+if chart_type == "Bar Chart":
+    bar_cat_candidates = [c for c in all_cols if df_raw[c].nunique() <= 50]
+    if bar_cat_candidates:
+        bar_cat_col = st.sidebar.selectbox("Category Column (X-axis)", bar_cat_candidates)
+        bar_mode = st.sidebar.radio(
+            "Bar Value Calculation",
+            ["Record Count (Frequency)", "Average of Numeric Column"],
+        )
+        if bar_mode == "Average of Numeric Column":
+            if numeric_cols:
+                bar_val_col = st.sidebar.selectbox("Value Column (to Average)", numeric_cols)
             else:
-                selected_num = st.sidebar.selectbox("Select Numeric Column", num_cols)
-                max_samples = min(rows, 200)
-                sample_limit = st.sidebar.slider(
-                    "Sample Limit (First N rows)",
-                    min_value=10,
-                    max_value=max(10, max_samples),
-                    value=min(60, max_samples)
-                )
+                st.sidebar.warning("No numeric columns available to compute an average.")
 
-                if st.button("Generate Line Chart", key="btn_line"):
-                    series = df[selected_num].dropna().head(sample_limit).reset_index(drop=True)
-                    if series.empty:
-                        st.warning(f"No valid numeric data in column '{selected_num}'.")
-                    else:
-                        fig, ax = plt.subplots(figsize=(9, 4.5))
-                        ax.plot(
-                            series.index,
-                            series.values,
-                            color="#1f77b4",
-                            marker="o",
-                            markersize=4,
-                            linestyle="-",
-                            linewidth=1.5
-                        )
-                        ax.set_title(f"{selected_num} Trend (First {len(series)} Samples)", fontsize=13, pad=10)
-                        ax.set_xlabel("Sample Index", fontsize=11)
-                        ax.set_ylabel(selected_num, fontsize=11)
-                        ax.grid(True, linestyle="--", alpha=0.6)
-                        fig.tight_layout()
-                        st.pyplot(fig)
-                        plt.close(fig)
+elif chart_type == "Line Chart":
+    if numeric_cols:
+        line_y_col = st.sidebar.selectbox("Value Column (Y-axis)", numeric_cols)
+        line_x_options = ["(Row Index)"] + all_cols
+        line_x_col = st.sidebar.selectbox("Sequence / Time Column (X-axis)", line_x_options)
 
-        # 2. Bar Chart
-        elif chart_type == "Bar Chart":
-            st.write("#### Bar Chart (Category Comparison)")
-            # Filter candidate categorical columns or low cardinality columns
-            bar_cat_options = [c for c in df.columns if df[c].nunique() <= 30]
+elif chart_type == "Scatter Plot":
+    if len(numeric_cols) >= 2:
+        scatter_x_col = st.sidebar.selectbox("X-axis Numeric Column", numeric_cols, index=0)
+        # Default Y to second numeric column if available
+        default_y_idx = 1 if len(numeric_cols) > 1 else 0
+        scatter_y_col = st.sidebar.selectbox("Y-axis Numeric Column", numeric_cols, index=default_y_idx)
+        color_candidates = ["(None)"] + [c for c in all_cols if df_raw[c].nunique() <= 30]
+        scatter_color_col = st.sidebar.selectbox("Color By (Optional)", color_candidates)
+    elif len(numeric_cols) == 1:
+        st.sidebar.info("Scatter plot requires at least two numeric columns.")
 
-            if not bar_cat_options:
-                st.warning("No suitable category/group column (with <= 30 unique values) found.")
+elif chart_type == "Histogram":
+    if numeric_cols:
+        hist_col = st.sidebar.selectbox("Numeric Column to Distribute", numeric_cols)
+        hist_bins = st.sidebar.slider("Number of Bins", min_value=5, max_value=100, value=30)
+
+elif chart_type == "Pie Chart":
+    pie_candidates = [c for c in all_cols if 2 <= df_raw[c].nunique() <= 15]
+    if pie_candidates:
+        pie_cat_col = st.sidebar.selectbox("Category Column", pie_candidates)
+
+
+# ==============================================================================
+# MAIN PAGE CONTENT
+# ==============================================================================
+st.title("📊 CSV Data Analysis Toolkit")
+st.caption(f"Active File: **{uploaded_file.name}** | Original Records: **{total_raw_rows:,}**")
+
+# ------------------------------------------------------------------------------
+# SECTION 1 — DATA OVERVIEW
+# ------------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("1. 📋 Data Overview")
+
+total_cols = len(all_cols)
+total_missing = int(df_raw.isna().sum().sum())
+total_duplicates = int(df_raw.duplicated().sum())
+
+# Metrics Cards
+m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+m_col1.metric("Total Rows", f"{total_raw_rows:,}")
+m_col2.metric("Total Columns", f"{total_cols:,}")
+m_col3.metric("Missing Values", f"{total_missing:,}")
+m_col4.metric("Duplicate Rows", f"{total_duplicates:,}")
+
+# Preview of original data
+st.write("#### Original Dataset Preview (First 20 Rows)")
+st.dataframe(df_raw.head(20), width="stretch")
+
+# Detailed column breakdown in an expander
+with st.expander("📋 Detailed Column Structure & Missing Data Breakdown", expanded=False):
+    col_breakdown = pd.DataFrame({
+        "Column Name": all_cols,
+        "Data Type": [str(df_raw[c].dtype) for c in all_cols],
+        "Non-Null Count": [int(df_raw[c].notna().sum()) for c in all_cols],
+        "Missing Count": [int(df_raw[c].isna().sum()) for c in all_cols],
+        "Missing (%)": [
+            round((df_raw[c].isna().sum() / total_raw_rows) * 100, 2)
+            if total_raw_rows > 0
+            else 0.0
+            for c in all_cols
+        ],
+        "Unique Values": [int(df_raw[c].nunique()) for c in all_cols],
+    })
+    st.dataframe(col_breakdown, width="stretch")
+
+
+# ------------------------------------------------------------------------------
+# SECTION 2 — DATA FILTERING & FILTERED VIEW
+# ------------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("2. 🔍 Filtered Dataset View")
+
+# Row count indicator
+if filtered_rows == 0:
+    st.warning(
+        "⚠️ **No rows match your current filter criteria.** "
+        "Please adjust or reset the filters in the sidebar."
+    )
+    st.stop()
+elif filtered_rows < total_raw_rows:
+    st.info(
+        f"Filtered view: Showing **{filtered_rows:,}** of **{total_raw_rows:,}** records "
+        f"({pct_remaining:.1f}% of original dataset)."
+    )
+else:
+    st.success("Showing all original records (No restrictive filters currently applied).")
+
+# Display the interactive filtered dataframe
+st.dataframe(df_filtered.head(100), width="stretch")
+if filtered_rows > 100:
+    st.caption(f"Displaying first 100 of {filtered_rows:,} filtered records above.")
+
+
+# ------------------------------------------------------------------------------
+# SECTION 3 — STATISTICS (ON FILTERED DATA)
+# ------------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("3. 📊 Summary Statistics (Filtered Data)")
+
+# Numerical Statistics
+if numeric_cols:
+    with st.expander("🔢 Numerical Statistics (Descriptive)", expanded=True):
+        st.write("Summary statistics computed on the **active filtered data**:")
+        num_stats = df_filtered[numeric_cols].describe().T
+        st.dataframe(num_stats, width="stretch")
+else:
+    st.info("No numeric columns found in this dataset for numerical statistics.")
+
+# Categorical Statistics
+if categorical_cols:
+    with st.expander("🔤 Categorical Columns Summary", expanded=False):
+        cat_summary_list = []
+        for c in categorical_cols:
+            series_non_null = df_filtered[c].dropna()
+            if not series_non_null.empty:
+                top_val = series_non_null.mode().iloc[0]
+                top_freq = int((series_non_null == top_val).sum())
+                top_pct = round((top_freq / len(series_non_null)) * 100, 1)
             else:
-                selected_cat = st.sidebar.selectbox("Select Category Column", bar_cat_options)
-                aggregation_mode = st.sidebar.radio(
-                    "Aggregation Mode",
-                    ["Frequency (Count)", "Average of Numeric Column"]
-                )
+                top_val = "N/A"
+                top_freq = 0
+                top_pct = 0.0
 
-                measure_col = None
-                if aggregation_mode == "Average of Numeric Column":
-                    if not num_cols:
-                        st.warning("No numeric columns available to compute averages. Defaulting to Count.")
-                        aggregation_mode = "Frequency (Count)"
-                    else:
-                        measure_col = st.sidebar.selectbox("Select Value Column to Average", num_cols)
+            cat_summary_list.append({
+                "Column Name": c,
+                "Unique Values": int(series_non_null.nunique()),
+                "Most Common Value": str(top_val),
+                "Top Value Frequency": top_freq,
+                "Top Value (% of Non-Null)": f"{top_pct}%",
+            })
 
-                if st.button("Generate Bar Chart", key="btn_bar"):
-                    fig, ax = plt.subplots(figsize=(9, 4.5))
+        st.dataframe(pd.DataFrame(cat_summary_list), width="stretch")
 
-                    if aggregation_mode == "Average of Numeric Column" and measure_col:
-                        grouped = df.groupby(selected_cat)[measure_col].mean().dropna().sort_values(ascending=False).head(15)
-                        categories = [str(c) for c in grouped.index]
-                        values = grouped.values
-                        ax.bar(categories, values, color="#2ca02c", edgecolor="#1b611b", width=0.55)
-                        ax.set_title(f"Average {measure_col} by {selected_cat}", fontsize=13, pad=10)
-                        ax.set_ylabel(f"Average {measure_col}", fontsize=11)
-                    else:
-                        counts = df[selected_cat].value_counts().head(15)
-                        categories = [str(c) for c in counts.index]
-                        values = counts.values
-                        ax.bar(categories, values, color="#2ca02c", edgecolor="#1b611b", width=0.55)
-                        ax.set_title(f"Distribution of {selected_cat}", fontsize=13, pad=10)
-                        ax.set_ylabel("Count", fontsize=11)
 
-                    ax.set_xlabel(selected_cat, fontsize=11)
-                    plt.xticks(rotation=30, ha="right")
-                    ax.grid(axis="y", linestyle="--", alpha=0.6)
-                    fig.tight_layout()
-                    st.pyplot(fig)
-                    plt.close(fig)
+# ------------------------------------------------------------------------------
+# SECTION 4 — VISUALIZATION (PLOTLY EXPRESS ON FILTERED DATA)
+# ------------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("4. 📈 Interactive Visualization (Filtered Data)")
 
-        # 3. Pie Chart
-        elif chart_type == "Pie Chart":
-            st.write("#### Pie Chart (Category Proportions)")
-            pie_cat_options = [c for c in df.columns if 2 <= df[c].nunique() <= 12]
-
-            if not pie_cat_options:
-                st.warning("No suitable categorical column with 2 to 12 unique categories found for a pie chart.")
-            else:
-                selected_pie_cat = st.sidebar.selectbox("Select Category Column", pie_cat_options)
-
-                if st.button("Generate Pie Chart", key="btn_pie"):
-                    val_counts = df[selected_pie_cat].dropna().value_counts()
-                    # Aggregate small slices into "Other" if more than 5 categories
-                    if len(val_counts) > 5:
-                        top_4 = val_counts.iloc[:4]
-                        other_sum = val_counts.iloc[4:].sum()
-                        val_counts = pd.concat([top_4, pd.Series({"Other": other_sum})])
-
-                    labels = [str(lbl) for lbl in val_counts.index]
-                    sizes = val_counts.values
-                    colors = ["#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948"]
-
-                    fig, ax = plt.subplots(figsize=(6.5, 5.5))
-                    ax.pie(
-                        sizes,
-                        labels=labels,
-                        autopct="%1.1f%%",
-                        startangle=140,
-                        colors=colors[: len(sizes)],
-                        wedgeprops={"edgecolor": "white", "linewidth": 1.5}
+if df_filtered.empty:
+    st.warning("⚠️ No data available to visualize. Adjust your filters to include data.")
+else:
+    # 1. Bar Chart
+    if chart_type == "Bar Chart":
+        if not bar_cat_col:
+            st.warning(
+                "⚠️ Bar chart requires a categorical or low-cardinality column (<= 50 unique values). "
+                "None was found in this dataset."
+            )
+        else:
+            if bar_mode == "Average of Numeric Column":
+                if not bar_val_col:
+                    st.warning("Please select a numeric column to calculate the average.")
+                else:
+                    grouped = (
+                        df_filtered.groupby(bar_cat_col)[bar_val_col]
+                        .mean()
+                        .dropna()
+                        .reset_index()
+                        .sort_values(by=bar_val_col, ascending=False)
                     )
-                    ax.set_title(f"Proportions of {selected_pie_cat}", fontsize=13, pad=12)
-                    ax.axis("equal")
-                    fig.tight_layout()
-                    st.pyplot(fig)
-                    plt.close(fig)
+                    if grouped.empty:
+                        st.warning("No valid data available after grouping.")
+                    else:
+                        fig = px.bar(
+                            grouped,
+                            x=bar_cat_col,
+                            y=bar_val_col,
+                            title=f"Average {bar_val_col} by {bar_cat_col}",
+                            labels={bar_val_col: f"Mean {bar_val_col}", bar_cat_col: bar_cat_col},
+                            template="plotly_white",
+                            color_discrete_sequence=["#1f77b4"],
+                        )
+                        fig.update_layout(xaxis_tickangle=-30)
+                        st.plotly_chart(fig, width="stretch")
+            else:
+                # Frequency Count mode
+                val_counts = (
+                    df_filtered[bar_cat_col]
+                    .value_counts()
+                    .reset_index()
+                )
+                val_counts.columns = [bar_cat_col, "Count"]
+                if val_counts.empty:
+                    st.warning("No categorical values found to plot.")
+                else:
+                    fig = px.bar(
+                        val_counts,
+                        x=bar_cat_col,
+                        y="Count",
+                        title=f"Frequency Distribution of {bar_cat_col}",
+                        template="plotly_white",
+                        color_discrete_sequence=["#2ca02c"],
+                    )
+                    fig.update_layout(xaxis_tickangle=-30)
+                    st.plotly_chart(fig, width="stretch")
+
+    # 2. Line Chart
+    elif chart_type == "Line Chart":
+        if not numeric_cols:
+            st.warning("⚠️ Line chart requires at least one numeric column for the Y-axis.")
+        elif not line_y_col:
+            st.warning("Please select a numeric column for the Y-axis in the sidebar.")
+        else:
+            plot_df = df_filtered.dropna(subset=[line_y_col]).copy()
+            if plot_df.empty:
+                st.warning(f"No non-null data available in '{line_y_col}' to plot.")
+            else:
+                if line_x_col == "(Row Index)":
+                    plot_df = plot_df.reset_index(drop=True)
+                    x_axis_name = "Index"
+                    plot_df[x_axis_name] = plot_df.index
+                else:
+                    x_axis_name = line_x_col
+
+                fig = px.line(
+                    plot_df,
+                    x=x_axis_name,
+                    y=line_y_col,
+                    title=f"{line_y_col} Trend over {x_axis_name}",
+                    markers=True if len(plot_df) <= 100 else False,
+                    template="plotly_white",
+                    color_discrete_sequence=["#ff7f0e"],
+                )
+                st.plotly_chart(fig, width="stretch")
+
+    # 3. Scatter Plot
+    elif chart_type == "Scatter Plot":
+        if len(numeric_cols) < 2:
+            st.warning(
+                f"⚠️ Scatter plots require at least 2 numeric columns. "
+                f"This dataset currently has {len(numeric_cols)}."
+            )
+        elif not scatter_x_col or not scatter_y_col:
+            st.warning("Please select valid numeric columns for both X and Y axes in the sidebar.")
+        else:
+            scatter_df = df_filtered.dropna(subset=[scatter_x_col, scatter_y_col]).copy()
+            if scatter_df.empty:
+                st.warning("No rows with non-null values for both selected numeric columns.")
+            else:
+                color_arg = (
+                    scatter_color_col
+                    if scatter_color_col and scatter_color_col != "(None)"
+                    else None
+                )
+                fig = px.scatter(
+                    scatter_df,
+                    x=scatter_x_col,
+                    y=scatter_y_col,
+                    color=color_arg,
+                    title=f"{scatter_y_col} vs {scatter_x_col}",
+                    template="plotly_white",
+                )
+                st.plotly_chart(fig, width="stretch")
+
+    # 4. Histogram
+    elif chart_type == "Histogram":
+        if not numeric_cols:
+            st.warning("⚠️ Histogram requires at least one numeric column. None found in this dataset.")
+        elif not hist_col:
+            st.warning("Please select a numeric column in the sidebar.")
+        else:
+            hist_df = df_filtered.dropna(subset=[hist_col])
+            if hist_df.empty:
+                st.warning(f"No non-null data available in '{hist_col}' for histogram.")
+            else:
+                fig = px.histogram(
+                    hist_df,
+                    x=hist_col,
+                    nbins=hist_bins,
+                    title=f"Distribution of {hist_col} ({hist_bins} Bins)",
+                    template="plotly_white",
+                    color_discrete_sequence=["#9467bd"],
+                )
+                st.plotly_chart(fig, width="stretch")
+
+    # 5. Pie Chart
+    elif chart_type == "Pie Chart":
+        if not pie_cat_col:
+            st.warning(
+                "⚠️ Pie charts require a categorical column with 2 to 15 unique categories "
+                "to ensure visual clarity. None was found in this dataset."
+            )
+        else:
+            pie_counts = (
+                df_filtered[pie_cat_col]
+                .dropna()
+                .value_counts()
+                .reset_index()
+            )
+            pie_counts.columns = [pie_cat_col, "Count"]
+            if pie_counts.empty:
+                st.warning(f"No data available in '{pie_cat_col}' to construct a pie chart.")
+            else:
+                fig = px.pie(
+                    pie_counts,
+                    names=pie_cat_col,
+                    values="Count",
+                    title=f"Proportions of {pie_cat_col}",
+                    template="plotly_white",
+                )
+                st.plotly_chart(fig, width="stretch")
+
+
+# ------------------------------------------------------------------------------
+# SECTION 5 — DOWNLOAD FILTERED DATA
+# ------------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("5. 📥 Export Filtered Data")
+st.write(
+    f"Download your active filtered dataset (**{filtered_rows:,}** rows) "
+    f"as a clean CSV file directly to your local computer."
+)
+
+# Convert filtered DataFrame to CSV in memory (no disk file creation)
+csv_buffer = io.StringIO()
+df_filtered.to_csv(csv_buffer, index=False)
+csv_bytes = csv_buffer.getvalue().encode("utf-8")
+
+output_filename = (
+    f"filtered_{uploaded_file.name}"
+    if uploaded_file.name.endswith(".csv")
+    else f"filtered_{uploaded_file.name}.csv"
+)
+
+st.download_button(
+    label=f"📥 Download Filtered Data ({filtered_rows:,} rows)",
+    data=csv_bytes,
+    file_name=output_filename,
+    mime="text/csv",
+    help="Click to download the current filtered dataset as a CSV.",
+)
